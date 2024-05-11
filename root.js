@@ -1,15 +1,5 @@
 // noinspection JSUnusedGlobalSymbols,UnreachableCodeJS,DuplicatedCode
 
-/*!
- * Neil's Shorthand JS Library v1.0.0
- *
- * Copyright Neil Paton
- * Released under the MIT licence
- * https://www.tldrlegal.com/license/mit-license
- *
- * Date: 2024-04-30T15:20Z
- */
-
 let $$ = {
 
 	/**

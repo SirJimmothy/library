@@ -1,4 +1,4 @@
-<?php
+<?php /** @noinspection PhpUnused */
 
 /**
  * Perform various SQL actions depending on context:
@@ -265,6 +265,127 @@ function site_session(string $act,?string $name = NULL,?string $value = NULL): ?
 		case 'get':		$return = ($_SESSION[$name] ?? NULL); break;
 	}
 	session_write_close();
+	return $return;
+}
+
+/**
+ * Generate HTML tags
+ *
+ * Examples:
+ *
+ * `tag('div','|body','Body tag here')`
+ * ```
+ * <div id="body">Body tag here</div>
+ * ```
+
+ * `tag('text','username¦plc=Username Here','Jimmothy')`
+ *
+ * ```
+ * <input type="text" name="username" placeholder="Username here" value="Jimmothy" />
+ * ```
+
+ * `tag('select','dropdown',[['opt1','Option 1'],['opt2','Option 2',1]])`
+ *
+ * ```
+ * <select name="dropdown"><option value="opt1">Option 1</option><option value="opt2" selected="selected">Option 2</option></select>
+ * ```
+ *
+ * @param string       $tag
+ * @param string       $attribs
+ * @param array|string $content
+ *
+ * @return string
+ */
+function tag(string $tag,string $attribs = '',$content = ''): string {
+	// Split attribute sets into standard vs custom
+	$attribs = array_pad(explode('¦',$attribs),2,'');
+	foreach($attribs as $key => $arr) {
+		$attribs[$key] = explode('|',$arr);
+	}
+
+	// Process standard attributes that can apply to all tags
+	$atr = [];
+	foreach($attribs[0] as $key => $arr) {
+		if ($arr == '') { continue; }
+
+		$arg = '';
+		switch ($key) {
+			case 0:	$arg = 'name';	break;
+			case 1:	$arg = 'id';		break;
+			case 2:	$arg = 'class';	break;
+			case 3:	$arg = 'style';	break;
+			case 4:	$arg = 'title';	break;
+		}
+		if ($arg) { $atr[] = $arg.'="'.$arr.'"'; }
+	}
+
+	// Process custom attributes
+	foreach($attribs[1] as $arr) {
+		if ($arr == '') { continue; }
+
+		$arr = array_pad(explode('=',$arr),2,'');
+		switch ($arr[0]) {
+			// Attributes that don't require custom values
+			case 'afo':	$atr[] = 'autofocus="autofocus"';					break;
+			case 'chk':	$atr[] = 'checked="checked"';							break;
+			case 'dis':	$atr[] = 'disabled="disabled"';						break;
+			case 'enc':	$atr[] = 'enctype="multipart/form-data"';	break;
+			case 'req':	$atr[] = 'required="required"';						break;
+			case 'sel':	$atr[] = 'selected="selected"';						break;
+
+			// Attributes that contain custom values
+			case 'csp':	$atr[] = 'colspan="'.$arr[1].'"';					break;
+			case 'rsp':	$atr[] = 'rowspan="'.$arr[1].'"';					break;
+			case 'plc':	$atr[] = 'placeholder="'.$arr[1].'"';			break;
+			case 'tar':	$atr[] = 'target="'.$arr[1].'"';					break;
+			case 'ttl':	$atr[] = 'title="'.$arr[1].'"';						break;
+			case 'val':	$atr[] = 'value="'.$arr[1].'"';						break;
+
+			// Tags where the shorthand is the full attribute name
+			// We don't have to specify these tags here, as default will handle it,
+			// but for the sake of reference, keep these visible
+			case 'alt':	case 'href':	case 'src':
+			default:
+				$atr[] = implode('=',$arr);
+			break;
+		}
+	}
+	$atr = ($atr ? ' '.implode(' ',$atr) : '');
+
+	switch ($tag) {
+		case 'hidden':	case 'text':	case 'password':	case 'email':			case 'url':		case 'search':
+		case 'submit':	case 'reset':	case 'image':			case 'checkbox':	case 'radio':	case 'file':
+ 		case 'date':		case 'time':	case 'number':		case 'color':			case 'range':
+			$return = '<input type="'.$tag.'"'.$atr.' value="'.$content.'" />';
+		break;
+		case 'area':	case 'br':	case 'hr':	case 'source':
+			$return = '<'.$tag.$atr.' />';
+		break;
+		case 'select':
+
+			/* For selects, presume $content is an array of arrays in this format:
+			 * [(string) value,(string) Caption,(truthy) selected],
+			 */
+			$content = (array) $content;
+			foreach($content as $key => $arr) {
+				if (!$arr) { continue; }
+
+				$arr = array_pad($arr,3,'');
+				$content[$key] = tag('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
+			}
+			$return = '<'.$tag.$atr.'>'.implode('',$content).'</'.$tag.'>';
+
+		break;
+		// Again, we don't have to specify these tags here, as default will handle it,
+		// but for the sake of reference, keep these visible
+		case 'a':			case 'audio':			case 'button':	case 'form':	case 'iframe':	case 'img':
+		case 'label':	case 'optgroup':	case 'option':	case 'pre':		case 'script':	case 'textarea':
+		case 'video':
+		default:
+			$return = '<'.$tag.$atr.'>'.$content.'</'.$tag.'>';
+		break;
+	}
+
 	return $return;
 }
 
