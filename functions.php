@@ -355,11 +355,15 @@ function tag(string $tag,string $attribs = '',$content = ''): string {
 	switch ($tag) {
 		case 'hidden':	case 'text':	case 'password':	case 'email':			case 'url':		case 'search':
 		case 'submit':	case 'reset':	case 'image':			case 'checkbox':	case 'radio':	case 'file':
- 		case 'date':		case 'time':	case 'number':		case 'color':			case 'range':
-			$return = '<input type="'.$tag.'"'.$atr.' value="'.$content.'" />';
+		case 'date':		case 'time':	case 'number':		case 'color':			case 'range':
+
+		$return = '<input type="'.$tag.'"'.$atr.' value="'.$content.'" />';
+
 		break;
 		case 'area':	case 'br':	case 'hr':	case 'source':
-			$return = '<'.$tag.$atr.' />';
+
+		$return = '<'.$tag.$atr.' />';
+
 		break;
 		case 'select':
 
@@ -372,21 +376,30 @@ function tag(string $tag,string $attribs = '',$content = ''): string {
 
 				$arr = array_pad($arr,3,'');
 				$content[$key] = tag('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
+				$content = implode('',$content);
 			}
-			$return = '<'.$tag.$atr.'>'.implode('',$content).'</'.$tag.'>';
 
 		break;
-		// Again, we don't have to specify these tags here, as default will handle it,
+		case 'ol': case 'ul':
+
+			if (is_array($content)) {
+				foreach($content as $key => $arr) {
+					$content[$key] = tag('li','',$arr);
+				}
+				$content = implode('',$content);
+			}
+		break;
+
+		// Again, we don't have to specify these tags here,
 		// but for the sake of reference, keep these visible
 		case 'a':			case 'audio':			case 'button':	case 'form':	case 'iframe':	case 'img':
 		case 'label':	case 'optgroup':	case 'option':	case 'pre':		case 'script':	case 'textarea':
 		case 'video':
 		default:
-			$return = '<'.$tag.$atr.'>'.$content.'</'.$tag.'>';
 		break;
 	}
 
-	return $return;
+	return ($return ?? '<'.$tag.$atr.'>'.$content.'</'.$tag.'>');
 }
 
 ?>
