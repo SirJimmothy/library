@@ -228,10 +228,9 @@ function interpret(string $content,array $data,string $separator = '',string $le
 	}
 
 	preg_match_all("|(".$left.")(.*)(".$right.")|U",$content,$match);
-	for ($i = 0, $max = count($match[0]); $i < $max; $i++) {
-		$key = strtolower(str_replace(['{','}'],'',$match[0][$i]));
-		$data[$key] = ($data[$key] ?? ($separator ? $orig[$i] : ''));
-		$content = str_replace($match[0][$i],$data[$key],$content);
+	foreach($match[2] as $key => $arr) {
+		$value		= ($data[$arr] ?? ($separator ? $orig[$key] : ''));
+		$content	= str_replace($match[0][$key],$value,$content);
 	}
 	return $content;
 	// <img src="/img/logo.png" />
