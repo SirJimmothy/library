@@ -657,9 +657,9 @@ function tag(string $tag,string $attribs = '',array|string $content = ''): strin
 					if (!$arr) { continue; }
 
 					$arr = array_pad($arr,3,'');
-					$content[$key] = self::tag2('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
-					$content = implode('',$content);
+					$content[$key] = tag('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
 				}
+				$content = implode('',$content);
 			}
 
 		break;
