@@ -1,5 +1,287 @@
 <?php /** @noinspection PhpUnused */
 
+use JetBrains\PhpStorm\NoReturn;
+
+/**
+ * Perform common MySQL operations using prepared statements
+ *
+ * Examples for each action are provided in the code below
+ *
+ * @param string  $act    Action to perform
+ * @param mixed   $tbl    Table to query, or variable data, depending on action
+ * @param mixed   $fields Variable data, depending on function
+ * @param mixed   $values Variable data, depending on function
+ * @param mixed   $extra  Variable data, depending on function
+ * @param ?mysqli $conn   MySQL connection to use, if not default
+ *
+ * @return mixed
+ * @noinspection PhpUnreachableStatementInspection
+ */
+function sql(string $act,mixed $tbl = NULL,mixed $fields = NULL,mixed $values = NULL,mixed $extra = NULL,?mysqli $conn = NULL): mixed {
+	$conn = ($conn ?: conf::$db); // Reference the default connection
+
+	switch ($act) {
+		/**
+		 * Return the last recorded error for this database session
+		 *
+		 * do_sql('error');
+		 */
+		case 'error':
+
+			return $conn->error;
+
+		break;
+		/**
+		 * Connect to a MySQL or compatible instance
+		 *
+		 * conf::$db = sql('connect','localhost','username','password','database');
+		 */
+		case 'connect':
+
+			$conn = new mysqli;
+			$conn->set_opt(MYSQLI_SET_CHARSET_NAME,'utf8');
+			$conn->set_opt(MYSQLI_OPT_CONNECT_TIMEOUT,1);
+			$conn->connect($tbl,$fields,$values,$extra);
+
+			return $conn;
+
+		break;
+		/**
+		 * Retrieve a single table row or field
+		 *
+		 * sql('select','tbl1',"WHERE `field` = ?",['val1']);
+		 * sql('select','customer',"WHERE `customer_id` = ?",[1],'name');
+		 * sql('select','customer',1);
+		 */
+		case 'select':
+
+			/** @var string|int|float $fields */
+
+			if (is_numeric($fields)) {	// Look for an ID field that matches the table, e.g. customer_id
+				$values	= [$fields];
+				$fields	= " WHERE `".$tbl."_id` = ?";
+			} elseif ($fields) {
+				$fields = " ".$fields;
+			}
+
+			$result = sql('query',$tbl,$fields,$values);
+			$result = sql('array',$result);
+
+			// If single fieldname requested, attempt to return that field only
+			if ($extra) { $result = ($result[$extra] ?? NULL); }
+
+			return $result;
+
+		break;
+		/**
+		 * Perform a query
+		 *
+		 * sql('query','table',"WHERE `field` = ?",['val1']);
+		 */
+		case 'query':
+
+			$query = $conn->prepare("SELECT * FROM `".$tbl."`".($fields ? " ".$fields : ''));
+			if ($values) {
+				$query->bind_param(sql('types',$values),...$values);
+			}
+
+			$query->execute();
+			return $query->get_result();
+
+		break;
+		/**
+		 * Retrieve a row from a query result
+		 *
+		 * sql('array',$query);
+		 */
+		case 'array':
+
+			/** @var mysqli_result $tbl */
+
+			if (!($tbl instanceof mysqli_result)) { return NULL; }
+			return $tbl->fetch_array(MYSQLI_ASSOC);
+
+		break;
+		/**
+		 * Insert a table row
+		 *
+		 * sql('add','table',['field1' => 'val1']);
+		 */
+		case 'add':
+
+			$places	= implode(',',array_pad([],count($fields),'?'));
+			$cols		= array_keys($fields);
+			$data		= array_values($fields);
+
+			foreach($cols as $key => $arr) { $cols[$key] = '`'.sql('cleanse',$arr).'`'; }
+			$cols = implode(',',$cols);
+
+			$query = $conn->prepare("INSERT INTO `".$tbl."` (".$cols.") VALUES(".$places.")");
+			$query->bind_param(sql('types',$data),...$data);
+
+			$query->execute();
+			return $query->get_result();
+
+		break;
+		/**
+		 * Update a table row
+		 *
+		 * sql('edit','table',['field1' => 'val1'],"WHERE `field` = ?",['val2']);
+		 */
+		case 'edit':
+
+			$places = [];
+			foreach($fields as $key => $arr) { $places[] = "`".sql('cleanse',$key)."` = ?"; }
+			$places = implode(',',$places);
+
+			$data		= array_values(array_merge($fields,$extra));
+			$values	= ($values ? " ".$values : '');
+
+			// TOOD also add the WHERE statement ($values) to the prepared statement
+			$query = $conn->prepare("UPDATE `".$tbl."` SET ".$places.$values);
+			$query->bind_param(sql('types',$data),...$data);
+
+			$query->execute();
+			return $query->get_result();
+
+		break;
+		/**
+		 * Delete a table row
+		 *
+		 * sql('delete','table',"WHERE `field` = ?",['val1']);
+		 */
+		case 'delete':
+
+			$query = $conn->prepare("DELETE * FROM `".$tbl."`".($fields ? " ".$fields : ''));
+			$query->bind_param(sql('types',$values),...$values);
+
+			$query->execute();
+			return $query->get_result();
+
+		break;
+		/**
+		 * Perform a custom query
+		 *
+		 * sql('custom_query',"SHOW TABLE STATUS LIKE ?",['tbl1']);
+		 */
+		case 'custom_query':
+
+			$query = $conn->prepare($tbl);
+			if ($fields) {
+				$query->bind_param(sql($fields),$fields);
+			}
+
+			$query->execute();
+			return $query->get_result();
+
+		break;
+		/**
+		 * Get the specified table's next AutoIncrement value
+		 *
+		 * sql('next','table');
+		 */
+		case 'next':
+
+			$result = sql('custom_query',"SHOW TABLE STATUS LIKE '".$tbl."'");
+			$result = $result->fetch_assoc();
+
+			return $result['Auto_increment'];
+
+		break;
+		/**
+		 * Return the AutoIncrement ID of the last inserted row for this database session
+		 */
+		case 'last':
+
+			return ($conn->insert_id ?: 0);
+
+		break;
+		/**
+		 * Count the number of results for a given query
+		 *
+		 * sql('count','table',"WHERE `field` = ?",['val1']);
+		 */
+		case 'count':
+
+			$query	= "SELECT * FROM `".$tbl."`".($fields ? " ".$fields : "");
+			$return	= sql('custom_query',"SELECT COUNT(*) AS `count` FROM (".$query.") as `tCount`");
+
+			if ($return = sql('array',$return)) {
+
+				// Attempt fast count
+				return $return['count'];
+
+			} elseif ($return = sql('custom_query',$query)) {
+
+				// If fast count fails, get query result count
+				return sql('rows',$return);
+
+			} else {
+
+				// If both above fail, give up
+				return 0;
+
+			}
+
+		break;
+		/**
+		 * Retrieve the number of rows returned from a query
+		 *
+		 * sql('rows',$query);
+		 */
+		case 'rows':
+
+			/** @var mysqli_result $tbl */
+
+			return ($tbl ? $tbl->num_rows : 0);
+
+		break;
+		/**
+		 * Determine field value types for parameter binding
+		 *
+		 * sql('types',['val1','val2'])
+		 */
+		case 'types':
+
+			/** @var array $tbl */
+
+			$return = '';
+			foreach($tbl as $arr) {
+				if (is_int($arr))											{ $return .= 'i'; continue; }	// Check for int
+				if (is_float($arr))										{ $return .= 'f'; continue; }	// Check for string
+				if (!mb_check_encoding($arr,'UTF-8'))	{ $return .= 'b'; continue; }	// Check for blob
+				$return .= 's';							// Default to string
+			}
+			return $return;
+
+		break;
+		/**
+		 * Perform string escapes in situations where parameters can't be bound
+		 *
+		 * sql('cleanse',"I've got bad data in me");
+		 */
+		case 'cleanse':
+
+			/** @var string $tbl */
+
+			return $conn->real_escape_string($tbl);
+
+		break;
+		/**
+		 * Determine whether the passed value qualifies as a table AutoIncrement ID
+		 *
+		 * sql('id',45);
+		 */
+		case 'id':
+
+			return (is_numeric($tbl) && (int) $tbl == (float) $tbl);
+
+		break;
+	}
+
+	return NULL;
+}
+
 /**
  * Perform various SQL actions depending on context:
  * * error   Return the last-produced error
@@ -25,11 +307,11 @@
  * @param ?mysqli_result|string $tbl   Table name to query, aside from `connect` act
  * @param string|null           $val   Value to return, usually a result set's field name
  * @param string|null           $extra Additional query to apply, such as WHERE
- * @param ?mysqli|string        $conn  Database connection to use; defaults to `conf::$db`
+ * @param ?string|mysqli        $conn  Database connection to use; defaults to `conf::$db`
  *
  * @return mixed
  */
-function do_sql(string $act,string $tbl = NULL,string $val = NULL,string $extra = NULL,$conn = NULL) {
+function do_sql(string $act,mysqli_result|string $tbl = NULL,string $val = NULL,string $extra = NULL,string|mysqli $conn = NULL): mixed {
 	// Note: $return is reused as often as possible to prevent confusion between variables
 	// $conn is not used in the examples below, it should have already been defined according to the constant
 	// Where $extra is an integer and not a string, this will be compared against the field
@@ -162,7 +444,7 @@ function do_sql(string $act,string $tbl = NULL,string $val = NULL,string $extra 
 			$extra = (do_sql('id',$extra) ? "WHERE `".$tbl."_id` = '".$extra."'" : $extra);
 			$return = do_sql('query',$tbl,$val,$extra,$conn);
 			$return = do_sql('array',$return);
-			if ($val && strpos($val,',') === FALSE) { $return = ($return[$val] ?? $return); }
+			if ($val && !str_contains($val,',')) { $return = ($return[$val] ?? $return); }
 
 		break;
 		case 'next':
@@ -242,7 +524,7 @@ function interpret(string $content,array $data,string $separator = '',string $le
  * @param string $url
  * @param int    $code
  */
-function redir(string $url,int $code = 0): void {
+#[NoReturn] function redir(string $url,int $code = 0): void {
 	header('Location: '.$url,TRUE,($code ?? 302));
 	exit; // Avoid conflicts with other header commands
 }
@@ -276,13 +558,11 @@ function site_session(string $act,?string $name = NULL,?string $value = NULL): ?
  * ```
  * <div id="body">Body tag here</div>
  * ```
-
  * `tag('text','username¦plc=Username Here','Jimmothy')`
  *
  * ```
  * <input type="text" name="username" placeholder="Username here" value="Jimmothy" />
  * ```
-
  * `tag('select','dropdown',[['opt1','Option 1'],['opt2','Option 2',1]])`
  *
  * ```
@@ -295,7 +575,7 @@ function site_session(string $act,?string $name = NULL,?string $value = NULL): ?
  *
  * @return string
  */
-function tag(string $tag,string $attribs = '',$content = ''): string {
+function tag(string $tag,string $attribs = '',array|string $content = ''): string {
 	// Split attribute sets into standard vs custom
 	$attribs = array_pad(explode('¦',$attribs),2,'');
 	foreach($attribs as $key => $arr) {
@@ -321,6 +601,8 @@ function tag(string $tag,string $attribs = '',$content = ''): string {
 	// Process custom attributes
 	foreach($attribs[1] as $arr) {
 		if ($arr == '') { continue; }
+		// Attributes that don't require custom values
+		// Attributes that contain custom values
 
 		$arr = array_pad(explode('=',$arr),2,'');
 		switch ($arr[0]) {
@@ -366,16 +648,18 @@ function tag(string $tag,string $attribs = '',$content = ''): string {
 		break;
 		case 'select':
 
-			/* For selects, presume $content is an array of arrays in this format:
+			/*
+			 * For selects, if $content is an array, assume it's of arrays in this format:
 			 * [(string) value,(string) Caption,(truthy) selected],
 			 */
-			$content = (array) $content;
-			foreach($content as $key => $arr) {
-				if (!$arr) { continue; }
+			if (is_array($content)) {
+				foreach($content as $key => $arr) {
+					if (!$arr) { continue; }
 
-				$arr = array_pad($arr,3,'');
-				$content[$key] = tag('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
-				$content = implode('',$content);
+					$arr = array_pad($arr,3,'');
+					$content[$key] = self::tag2('option','¦val='.$arr[0].($arr[2] ? '|sel' : ''),$arr[1]);
+					$content = implode('',$content);
+				}
 			}
 
 		break;
